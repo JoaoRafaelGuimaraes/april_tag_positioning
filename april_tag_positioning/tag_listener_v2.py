@@ -1,7 +1,6 @@
 import rclpy
 from rclpy.node import Node
 
-import base64
 import numpy as np
 from tf2_ros import Buffer, Time, TransformListener
 from tf2_ros import LookupException, ConnectivityException, ExtrapolationException
@@ -30,8 +29,8 @@ WEB_REFRESH_MS = 100
 CAMERA_TOPIC = "/camera/camera/color/image_raw"
 CAMERA_TOPIC_CHECK_PERIOD = 1.0
 CAMERA_PREVIEW_MAX_WIDTH = 480
-CAMERA_PREVIEW_JPEG_QUALITY = 70
-CAMERA_PREVIEW_MAX_FPS = 8.0
+CAMERA_PREVIEW_JPEG_QUALITY = 65
+CAMERA_PREVIEW_MAX_FPS = 15.0
 
 GOAL_POINT = np.array([5.0, 0.0, 0.0])  # Ponto fixo no mapa para o drone se aproximar
 
@@ -177,9 +176,7 @@ class TagListener(Node):
             )
             return
 
-        image_base64 = base64.b64encode(encoded_frame.tobytes()).decode("ascii")
-        image_uri = f"data:image/jpeg;base64,{image_base64}"
-        self.visualizer.update_camera_image(image_uri)
+        self.visualizer.update_camera_image(encoded_frame.tobytes())
 
     def _resize_camera_preview(self, frame):
         height, width = frame.shape[:2]
