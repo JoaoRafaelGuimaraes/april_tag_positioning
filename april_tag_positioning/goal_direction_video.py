@@ -3,14 +3,13 @@ import threading
 import numpy as np
 
 try:
-    from dash import Dash, Input, Output, State, dcc, html
+    from dash import Dash, Input, Output, dcc, html
     from flask import Response
     import plotly.graph_objects as go
 except ImportError as exc:  # pragma: no cover - depends on local environment
     Dash = None
     Input = None
     Output = None
-    State = None
     dcc = None
     html = None
     Response = None
@@ -43,7 +42,6 @@ class GoalDirectionWebVisualizer:
         self._positions = []
         self._latest_position = None
         self._latest_direction = None
-        self._scene_camera = None
         self._scene_min = initial_points.min(axis=0)
         self._scene_max = initial_points.max(axis=0)
         self._camera_topic_available = False
@@ -77,10 +75,6 @@ class GoalDirectionWebVisualizer:
             self._latest_direction = direction.copy()
             self._scene_min = np.minimum(self._scene_min, position)
             self._scene_max = np.maximum(self._scene_max, position)
-
-    def update_scene_camera(self, scene_camera):
-        with self._lock:
-            self._scene_camera = _copy_scene_camera(scene_camera)
 
     def set_camera_topic_available(self, available):
         with self._camera_condition:
@@ -163,13 +157,8 @@ class GoalDirectionWebVisualizer:
             Output("camera-panel", "children"),
             Output("camera-panel", "style"),
             Input("graph-refresh", "n_intervals"),
-            State("goal-direction-graph", "relayoutData"),
         )
-        def refresh_graph(_, relayout_data):
-            scene_camera = _extract_scene_camera(relayout_data)
-            if scene_camera is not None:
-                self.update_scene_camera(scene_camera)
-
+        def refresh_graph(_):
             snapshot = self._snapshot()
             figure = build_goal_direction_figure(
                 positions=snapshot["positions"],
@@ -177,7 +166,6 @@ class GoalDirectionWebVisualizer:
                 tag_origin=self.tag_origin,
                 max_render_points=self.max_render_points,
                 axis_ranges=snapshot["axis_ranges"],
-                scene_camera=snapshot["scene_camera"],
             )
             status = build_status_panel(
                 latest_position=snapshot["latest_position"],
@@ -215,7 +203,6 @@ class GoalDirectionWebVisualizer:
             if self._latest_direction is not None:
                 latest_direction = self._latest_direction.copy()
 
-            scene_camera = _copy_scene_camera(self._scene_camera)
             axis_ranges = _axis_ranges_from_bounds(self._scene_min, self._scene_max)
             camera_topic_available = self._camera_topic_available
             camera_has_frame = self._camera_has_frame
@@ -225,7 +212,6 @@ class GoalDirectionWebVisualizer:
             "positions": positions,
             "latest_position": latest_position,
             "latest_direction": latest_direction,
-            "scene_camera": scene_camera,
             "axis_ranges": axis_ranges,
             "camera_topic_available": camera_topic_available,
             "camera_has_frame": camera_has_frame,
@@ -278,7 +264,6 @@ def build_goal_direction_figure(
     tag_origin,
     max_render_points=1500,
     axis_ranges=None,
-    scene_camera=None,
 ):
     _ensure_dependencies()
 
@@ -400,9 +385,6 @@ def build_goal_direction_figure(
         },
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "x": 0.0},
     )
-
-    if scene_camera is not None:
-        figure.update_layout(scene_camera=scene_camera)
 
     return figure
 
@@ -552,46 +534,6 @@ def _build_direction_arrow(current_position, direction, scene_span):
     return arrow_tip, shaft_tip, head_vector
 
 
-def _extract_scene_camera(relayout_data):
-    if not isinstance(relayout_data, dict):
-        return None
-
-    if isinstance(relayout_data.get("scene.camera"), dict):
-        return _copy_scene_camera(relayout_data["scene.camera"])
-
-    camera = {}
-    for section in ("center", "eye", "up"):
-        section_values = {}
-        for axis in ("x", "y", "z"):
-            key = f"scene.camera.{section}.{axis}"
-            value = relayout_data.get(key)
-            if value is not None:
-                section_values[axis] = float(value)
-        if section_values:
-            camera[section] = section_values
-
-    projection_type = relayout_data.get("scene.camera.projection.type")
-    if projection_type is not None:
-        camera["projection"] = {"type": projection_type}
-
-    if not camera:
-        return None
-
-    return camera
-
-
-def _copy_scene_camera(scene_camera):
-    if scene_camera is None:
-        return None
-
-    copied_camera = {}
-    for key, value in scene_camera.items():
-        if isinstance(value, dict):
-            copied_camera[key] = dict(value)
-        else:
-            copied_camera[key] = value
-
-    return copied_camera
 
 
 def _ensure_dependencies():
