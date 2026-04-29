@@ -38,6 +38,8 @@ class GoalDirectionWebVisualizer:
         self._positions = []
         self._latest_position = None
         self._latest_direction = None
+        self._camera_topic_available = False
+        self._camera_image_uri = None
         self._server_thread = None
         self._app = None
 
@@ -64,6 +66,17 @@ class GoalDirectionWebVisualizer:
             self._latest_position = position.copy()
             self._latest_direction = direction.copy()
 
+    def set_camera_topic_available(self, available):
+        with self._lock:
+            self._camera_topic_available = bool(available)
+            if not self._camera_topic_available:
+                self._camera_image_uri = None
+
+    def update_camera_image(self, image_uri):
+        with self._lock:
+            self._camera_topic_available = True
+            self._camera_image_uri = image_uri
+
     def get_local_url(self):
         return f"http://127.0.0.1:{self.port}"
 
@@ -81,11 +94,30 @@ class GoalDirectionWebVisualizer:
                     ),
                     style={"marginBottom": "12px"},
                 ),
-                html.Div(id="status-panel"),
-                dcc.Graph(
-                    id="goal-direction-graph",
-                    style={"height": "82vh"},
-                    config={"displaylogo": False},
+                html.Div(
+                    [
+                        html.Div(
+                            [
+                                html.Div(id="status-panel"),
+                                dcc.Graph(
+                                    id="goal-direction-graph",
+                                    style={"height": "82vh"},
+                                    config={"displaylogo": False},
+                                ),
+                            ],
+                            style={"flex": "2 1 700px", "minWidth": "480px"},
+                        ),
+                        html.Div(
+                            id="camera-panel",
+                            style={"display": "none"},
+                        ),
+                    ],
+                    style={
+                        "display": "flex",
+                        "gap": "16px",
+                        "alignItems": "flex-start",
+                        "flexWrap": "wrap",
+                    },
                 ),
                 dcc.Interval(
                     id="graph-refresh",
@@ -99,6 +131,8 @@ class GoalDirectionWebVisualizer:
         @app.callback(
             Output("goal-direction-graph", "figure"),
             Output("status-panel", "children"),
+            Output("camera-panel", "children"),
+            Output("camera-panel", "style"),
             Input("graph-refresh", "n_intervals"),
         )
         def refresh_graph(_):
@@ -114,7 +148,11 @@ class GoalDirectionWebVisualizer:
                 latest_direction=snapshot["latest_direction"],
                 num_samples=snapshot["num_samples"],
             )
-            return figure, status
+            camera_panel, camera_panel_style = build_camera_panel(
+                camera_topic_available=snapshot["camera_topic_available"],
+                camera_image_uri=snapshot["camera_image_uri"],
+            )
+            return figure, status, camera_panel, camera_panel_style
 
         return app
 
@@ -141,12 +179,16 @@ class GoalDirectionWebVisualizer:
             if self._latest_direction is not None:
                 latest_direction = self._latest_direction.copy()
 
+            camera_topic_available = self._camera_topic_available
+            camera_image_uri = self._camera_image_uri
             num_samples = len(self._positions)
 
         return {
             "positions": positions,
             "latest_position": latest_position,
             "latest_direction": latest_direction,
+            "camera_topic_available": camera_topic_available,
+            "camera_image_uri": camera_image_uri,
             "num_samples": num_samples,
         }
 
@@ -289,6 +331,54 @@ def build_status_panel(latest_position, latest_direction, num_samples):
             ),
         ],
         style={"marginBottom": "12px", "fontSize": "16px"},
+    )
+
+
+def build_camera_panel(camera_topic_available, camera_image_uri):
+    if not camera_topic_available:
+        return [], {"display": "none"}
+
+    panel_style = {
+        "flex": "1 1 340px",
+        "minWidth": "320px",
+        "maxWidth": "520px",
+        "padding": "12px",
+        "border": "1px solid #d9d9d9",
+        "borderRadius": "10px",
+        "backgroundColor": "#fafafa",
+    }
+
+    if camera_image_uri is None:
+        return (
+            html.Div(
+                [
+                    html.H4("Camera auxiliar", style={"marginTop": "0"}),
+                    html.Div("Topico encontrado. Aguardando frames..."),
+                ]
+            ),
+            panel_style,
+        )
+
+    return (
+        html.Div(
+            [
+                html.H4("Camera auxiliar", style={"marginTop": "0"}),
+                html.Div(
+                    "/camera/camera/color/image_raw",
+                    style={"marginBottom": "8px", "fontSize": "14px"},
+                ),
+                html.Img(
+                    src=camera_image_uri,
+                    style={
+                        "width": "100%",
+                        "height": "auto",
+                        "display": "block",
+                        "borderRadius": "8px",
+                    },
+                ),
+            ]
+        ),
+        panel_style,
     )
 
 
